@@ -94,6 +94,40 @@ Before adding dependencies:
 
 The codebase intelligence system was removed partly because sql.js added 21MB.
 
+## Parity Tests
+
+Use the parity harness to compare Codex vs Claude/OpenCode artifacts.
+
+### Prereqs
+
+- Codex CLI installed and authenticated
+- Claude Code or OpenCode CLI installed and authenticated
+
+### Environment variables
+
+- `GSD_PARITY_CODEX_CMD` (example: `codex --non-interactive`)
+- `GSD_PARITY_BASELINE_CMD` (example: `claude --non-interactive`)
+
+### Run the parity suite
+
+```bash
+npm run test:parity
+```
+
+Optional flags:
+
+- `--baseline opencode` to compare against OpenCode instead of Claude Code
+- `--report .planning/parity/custom-report.md` to write the report elsewhere
+- `--keep-workspaces` to reuse the parity workspaces
+
+### Output and exit codes
+
+- Report: `.planning/parity/parity-report.md`
+- Logs: `.planning/parity/` (install/plan/execute logs for each runtime)
+- Exit code `0`: parity passed
+- Exit code `1`: diffs or missing artifacts found
+- Exit code `2`: setup or command execution error
+
 ## Recovery Procedures
 
 ### Broken npm Release

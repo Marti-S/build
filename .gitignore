@@ -11,6 +11,9 @@ commands.html
 # Build artifacts (committed to npm, not git)
 hooks/dist/
 
+# Parity test artifacts
+.planning/parity/
+
 # Animation assets
 animation/
 *.gif
