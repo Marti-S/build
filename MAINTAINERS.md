@@ -134,6 +134,8 @@ Optional flags:
 - Exit code `1`: diffs or missing artifacts found
 - Exit code `2`: setup or command execution error
 
+Troubleshooting: execute-phase comparisons require SUMMARY artifacts. If you see missing SUMMARY failures, rerun parity with a phase that has execute-phase SUMMARY outputs and review the parity report for summary status.
+
 ## Recovery Procedures
 
 ### Broken npm Release
