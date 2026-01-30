@@ -220,6 +220,7 @@ function listFilesRec(dirPath) {
   return results;
 }
 
+
 function normalizeContent(content) {
   return content.split('\n')
     .map(line => line.replace(/\s+$/, ''))
@@ -434,32 +435,38 @@ function main() {
     process.exit(2);
   }
 
-  const planCommand = `/gsd:plan-phase ${phase} --skip-research --skip-verify`;
-  const executeCommand = `/gsd:execute-phase ${phase}`;
+  const codexPlanCommand = `/gsd:plan-phase ${phase} --skip-research --skip-verify`;
+  const codexExecuteCommand = `/gsd:execute-phase ${phase}`;
+  const baselinePlanCommand = options.baseline === 'opencode'
+    ? `/gsd-plan-phase ${phase} --skip-research --skip-verify`
+    : `/gsd:plan-phase ${phase} --skip-research --skip-verify`;
+  const baselineExecuteCommand = options.baseline === 'opencode'
+    ? `/gsd-execute-phase ${phase}`
+    : `/gsd:execute-phase ${phase}`;
 
-  const codexPlan = runCommand(`${codexCmd} ${planCommand}`, { cwd: codexWorkspace, env: process.env });
-  writeLog(logs.codexPlan, `${codexCmd} ${planCommand}`, codexPlan);
+  const codexPlan = runCommand(`${codexCmd} ${codexPlanCommand}`, { cwd: codexWorkspace, env: process.env });
+  writeLog(logs.codexPlan, `${codexCmd} ${codexPlanCommand}`, codexPlan);
   if (codexPlan.status !== 0) {
     console.error('Codex plan-phase failed. See log for details.');
     process.exit(2);
   }
 
-  const codexExecute = runCommand(`${codexCmd} ${executeCommand}`, { cwd: codexWorkspace, env: process.env });
-  writeLog(logs.codexExecute, `${codexCmd} ${executeCommand}`, codexExecute);
+  const codexExecute = runCommand(`${codexCmd} ${codexExecuteCommand}`, { cwd: codexWorkspace, env: process.env });
+  writeLog(logs.codexExecute, `${codexCmd} ${codexExecuteCommand}`, codexExecute);
   if (codexExecute.status !== 0) {
     console.error('Codex execute-phase failed. See log for details.');
     process.exit(2);
   }
 
-  const baselinePlan = runCommand(`${baselineCmd} ${planCommand}`, { cwd: baselineWorkspace, env: process.env });
-  writeLog(logs.baselinePlan, `${baselineCmd} ${planCommand}`, baselinePlan);
+  const baselinePlan = runCommand(`${baselineCmd} ${baselinePlanCommand}`, { cwd: baselineWorkspace, env: process.env });
+  writeLog(logs.baselinePlan, `${baselineCmd} ${baselinePlanCommand}`, baselinePlan);
   if (baselinePlan.status !== 0) {
     console.error('Baseline plan-phase failed. See log for details.');
     process.exit(2);
   }
 
-  const baselineExecute = runCommand(`${baselineCmd} ${executeCommand}`, { cwd: baselineWorkspace, env: process.env });
-  writeLog(logs.baselineExecute, `${baselineCmd} ${executeCommand}`, baselineExecute);
+  const baselineExecute = runCommand(`${baselineCmd} ${baselineExecuteCommand}`, { cwd: baselineWorkspace, env: process.env });
+  writeLog(logs.baselineExecute, `${baselineCmd} ${baselineExecuteCommand}`, baselineExecute);
   if (baselineExecute.status !== 0) {
     console.error('Baseline execute-phase failed. See log for details.');
     process.exit(2);
