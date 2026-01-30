@@ -77,7 +77,7 @@ npx get-shit-done-cc
 ```
 
 The installer prompts you to choose:
-1. **Runtime** — Claude Code, OpenCode, or both
+1. **Runtime** — Claude Code, OpenCode, Codex, or both
 2. **Location** — Global (all projects) or local (current project only)
 
 Verify with `/gsd:help` inside your Claude Code or OpenCode interface.
@@ -101,12 +101,16 @@ npx get-shit-done-cc --claude --local    # Install to ./.claude/
 # OpenCode (open source, free models)
 npx get-shit-done-cc --opencode --global # Install to ~/.opencode/
 
+# Codex (repo-scoped)
+npx get-shit-done-cc --codex --local     # Installs .codex/skills + AGENTS.md in this repo
+
 # Both runtimes
 npx get-shit-done-cc --both --global     # Install to both directories
 ```
 
 Use `--global` (`-g`) or `--local` (`-l`) to skip the location prompt.
 Use `--claude`, `--opencode`, or `--both` to skip the runtime prompt.
+Codex installs are repo-scoped and live under `.codex/skills` plus `AGENTS.md` in the project root.
 
 </details>
 
@@ -560,6 +564,9 @@ npx get-shit-done-cc --opencode --global --uninstall
 # Local installs (current project)
 npx get-shit-done-cc --claude --local --uninstall
 npx get-shit-done-cc --opencode --local --uninstall
+
+# Codex (local only)
+npx get-shit-done-cc --codex --local --uninstall
 ```
 
 This removes all GSD commands, agents, hooks, and settings while preserving your other configurations.

@@ -15,7 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Codex Repo Integration** - Users can install repo-scoped Codex skills and guidance for /gsd
 - [x] **Phase 2: Codex Parity Execution** - Users can run any /gsd command in Codex with parity and no regressions
 - [x] **Phase 3: Parity Test Harness** - Maintainers can verify Codex vs ClaudeCode parity automatically
-- [ ] **Phase 4: Parity Harness Alignment (Gap Closure)** - Close audit gaps in parity harness wiring and docs
+- [x] **Phase 4: Parity Harness Alignment (Gap Closure)** - Close audit gaps in parity harness wiring and docs
 
 ## Phase Details
 
@@ -72,7 +72,7 @@ Plans:
 
 Plans:
 - [x] 04-01-PLAN.md — Baseline-aware parity harness and SUMMARY validation
-- [ ] 04-02-PLAN.md — Update parity maintainer docs with phase override guidance
+- [x] 04-02-PLAN.md — Update parity maintainer docs with phase override guidance
 
 ## Progress
 
@@ -84,4 +84,4 @@ Phases execute in numeric order: 2 → 2.1 → 2.2 → 3 → 4
 | 1. Codex Repo Integration | 2/2 | Complete | 2026-01-27 |
 | 2. Codex Parity Execution | 3/3 | Complete | 2026-01-28 |
 | 3. Parity Test Harness | 1/1 | Complete | 2026-01-30 |
-| 4. Parity Harness Alignment (Gap Closure) | 1/2 | In progress | - |
+| 4. Parity Harness Alignment (Gap Closure) | 2/2 | Complete | 2026-01-30 |

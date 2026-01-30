@@ -21,22 +21,37 @@ const hasGlobal = args.includes('--global') || args.includes('-g');
 const hasLocal = args.includes('--local') || args.includes('-l');
 const hasOpencode = args.includes('--opencode');
 const hasClaude = args.includes('--claude');
+const hasCodex = args.includes('--codex');
 const hasBoth = args.includes('--both');
 const hasUninstall = args.includes('--uninstall') || args.includes('-u');
 
 // Runtime selection - can be set by flags or interactive prompt
-let selectedRuntimes = [];
+const runtimeOrder = ['claude', 'opencode', 'codex'];
+const runtimeSet = new Set();
 if (hasBoth) {
-  selectedRuntimes = ['claude', 'opencode'];
-} else if (hasOpencode) {
-  selectedRuntimes = ['opencode'];
-} else if (hasClaude) {
-  selectedRuntimes = ['claude'];
+  runtimeSet.add('claude');
+  runtimeSet.add('opencode');
 }
+if (hasClaude) {
+  runtimeSet.add('claude');
+}
+if (hasOpencode) {
+  runtimeSet.add('opencode');
+}
+if (hasCodex) {
+  runtimeSet.add('codex');
+}
+const selectedRuntimes = runtimeOrder.filter(runtime => runtimeSet.has(runtime));
 
 // Helper to get directory name for a runtime (used for local/project installs)
 function getDirName(runtime) {
-  return runtime === 'opencode' ? '.opencode' : '.claude';
+  if (runtime === 'opencode') {
+    return '.opencode';
+  }
+  if (runtime === 'codex') {
+    return '.codex';
+  }
+  return '.claude';
 }
 
 /**
@@ -140,6 +155,7 @@ if (hasHelp) {
     ${cyan}-l, --local${reset}               Install locally (to current directory)
     ${cyan}--claude${reset}                  Install for Claude Code only
     ${cyan}--opencode${reset}                Install for OpenCode only
+    ${cyan}--codex${reset}                   Install for Codex only (local only)
     ${cyan}--both${reset}                    Install for both Claude Code and OpenCode
     ${cyan}-u, --uninstall${reset}           Uninstall GSD (remove all GSD files)
     ${cyan}-c, --config-dir <path>${reset}   Specify custom config directory
@@ -165,6 +181,9 @@ if (hasHelp) {
     ${dim}# Install to current project only${reset}
     npx get-shit-done-cc --claude --local
 
+    ${dim}# Install for Codex in this project${reset}
+    npx get-shit-done-cc --codex --local
+
     ${dim}# Uninstall GSD from Claude Code globally${reset}
     npx get-shit-done-cc --claude --global --uninstall
 
@@ -175,6 +194,7 @@ if (hasHelp) {
     The --config-dir option is useful when you have multiple Claude Code
     configurations (e.g., for different subscriptions). It takes priority
     over the CLAUDE_CONFIG_DIR environment variable.
+    Codex installs are local-only and write .codex/skills plus AGENTS.md in the repo.
 `);
   process.exit(0);
 }
@@ -468,6 +488,251 @@ function copyWithPathReplacement(srcDir, destDir, pathPrefix, runtime) {
       fs.copyFileSync(srcPath, destPath);
     }
   }
+}
+
+function toKebabSegment(segment) {
+  return segment
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase();
+}
+
+function readFrontmatterFields(content) {
+  if (!content.startsWith('---')) {
+    return null;
+  }
+  const endIndex = content.indexOf('---', 3);
+  if (endIndex === -1) {
+    return null;
+  }
+
+  const frontmatter = content.substring(3, endIndex).trim();
+  const data = {};
+
+  for (const line of frontmatter.split('\n')) {
+    const match = line.match(/^([a-zA-Z0-9_-]+):\s*(.*)$/);
+    if (!match) {
+      continue;
+    }
+    const key = match[1];
+    let value = match[2].trim();
+    if (!value) {
+      continue;
+    }
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1).trim();
+    }
+    if (key === 'name' || key === 'description') {
+      data[key] = value;
+    }
+  }
+
+  return data;
+}
+
+function getGsdCommandFiles(srcDir) {
+  if (!fs.existsSync(srcDir)) {
+    return [];
+  }
+  const files = [];
+  const entries = fs.readdirSync(srcDir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const entryPath = path.join(srcDir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...getGsdCommandFiles(entryPath));
+    } else if (entry.isFile() && entry.name.endsWith('.md')) {
+      files.push(entryPath);
+    }
+  }
+
+  return files;
+}
+
+function buildCodexSkillDir(commandPath, gsdRoot) {
+  const relativePath = path.relative(gsdRoot, commandPath);
+  const withoutExt = relativePath.replace(/\.md$/i, '');
+  const segments = withoutExt.split(path.sep).map(toKebabSegment).filter(Boolean);
+  return `gsd-${segments.join('-')}`;
+}
+
+function removeExistingGsdSkills(skillsDir) {
+  if (!fs.existsSync(skillsDir)) {
+    return;
+  }
+  const entries = fs.readdirSync(skillsDir, { withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.name.startsWith('gsd-')) {
+      continue;
+    }
+    const entryPath = path.join(skillsDir, entry.name);
+    if (entry.isDirectory()) {
+      fs.rmSync(entryPath, { recursive: true });
+    } else {
+      fs.unlinkSync(entryPath);
+    }
+  }
+}
+
+function removeCodexGsdSkillDirs(skillsDir) {
+  if (!fs.existsSync(skillsDir)) {
+    return 0;
+  }
+  const entries = fs.readdirSync(skillsDir, { withFileTypes: true });
+  let removed = 0;
+  for (const entry of entries) {
+    if (!entry.name.startsWith('gsd-') || !entry.isDirectory()) {
+      continue;
+    }
+    fs.rmSync(path.join(skillsDir, entry.name), { recursive: true });
+    removed += 1;
+  }
+  return removed;
+}
+
+function buildCodexSkillContent(name, description, commandFilePath) {
+  return [
+    '---',
+    `name: ${name}`,
+    `description: ${description}`,
+    '---',
+    '',
+    `You are the \`${name}\` command for this repository.`,
+    `Load and follow \`${commandFilePath}\` as the canonical command instructions before acting.`,
+    'Follow the guidance in `AGENTS.md` for /gsd usage.',
+    'When command files reference `@~/.claude/get-shit-done/...`, resolve them to repo-local `@get-shit-done/...` paths.',
+    'Treat the skill name as the command entrypoint and follow the repo\'s /gsd command behavior.',
+    ''
+  ].join('\n');
+}
+
+function extractGsdBlock(templateContent) {
+  const match = templateContent.match(/<!-- GSD:START -->[\s\S]*?<!-- GSD:END -->/);
+  return match ? match[0] : null;
+}
+
+function writeCodexAgentsFile(rootDir, templateContent) {
+  const agentsPath = path.join(rootDir, 'AGENTS.md');
+  const gsdBlock = extractGsdBlock(templateContent);
+  if (!gsdBlock) {
+    console.error(`  ${yellow}✗${reset} Codex AGENTS template missing GSD markers`);
+    return false;
+  }
+
+  if (!fs.existsSync(agentsPath)) {
+    fs.writeFileSync(agentsPath, templateContent);
+    return true;
+  }
+
+  const existingContent = fs.readFileSync(agentsPath, 'utf8');
+  if (existingContent.includes('<!-- GSD:START -->') && existingContent.includes('<!-- GSD:END -->')) {
+    const updated = existingContent.replace(/<!-- GSD:START -->[\s\S]*?<!-- GSD:END -->/, gsdBlock);
+    fs.writeFileSync(agentsPath, updated.endsWith('\n') ? updated : `${updated}\n`);
+    return true;
+  }
+
+  const separator = existingContent.endsWith('\n') ? '\n' : '\n\n';
+  fs.writeFileSync(agentsPath, `${existingContent}${separator}${gsdBlock}\n`);
+  return true;
+}
+
+function removeCodexAgentsBlock(rootDir) {
+  const agentsPath = path.join(rootDir, 'AGENTS.md');
+  if (!fs.existsSync(agentsPath)) {
+    return { removed: false, deleted: false };
+  }
+  const existingContent = fs.readFileSync(agentsPath, 'utf8');
+  const gsdBlockRegex = /<!-- GSD:START -->[\s\S]*?<!-- GSD:END -->/;
+  if (!gsdBlockRegex.test(existingContent)) {
+    return { removed: false, deleted: false };
+  }
+  const updatedContent = existingContent.replace(gsdBlockRegex, '');
+  if (updatedContent.trim().length === 0) {
+    fs.unlinkSync(agentsPath);
+    return { removed: true, deleted: true };
+  }
+  fs.writeFileSync(agentsPath, updatedContent);
+  return { removed: true, deleted: false };
+}
+
+function installCodexLocal() {
+  const repoRoot = process.cwd();
+  const srcRoot = path.join(__dirname, '..');
+  const skillsDir = path.join(repoRoot, '.codex', 'skills');
+  const gsdCommandsDir = path.join(srcRoot, 'commands', 'gsd');
+  const agentsTemplatePath = path.join(srcRoot, 'get-shit-done', 'templates', 'codex', 'AGENTS.md');
+
+  fs.mkdirSync(skillsDir, { recursive: true });
+  removeExistingGsdSkills(skillsDir);
+
+  const commandFiles = getGsdCommandFiles(gsdCommandsDir);
+  let installedCount = 0;
+
+  for (const commandFile of commandFiles) {
+    const content = fs.readFileSync(commandFile, 'utf8');
+    const frontmatter = readFrontmatterFields(content);
+    const name = frontmatter && frontmatter.name;
+    const description = frontmatter && frontmatter.description;
+
+    if (!name || !description) {
+      const relative = path.relative(repoRoot, commandFile);
+      console.log(`  ${yellow}⚠${reset} Skipping ${relative} (missing name/description frontmatter)`);
+      continue;
+    }
+
+    const skillDirName = buildCodexSkillDir(commandFile, gsdCommandsDir);
+    const skillDir = path.join(skillsDir, skillDirName);
+    fs.mkdirSync(skillDir, { recursive: true });
+    const commandFilePath = path.relative(repoRoot, commandFile).replace(/\\/g, '/');
+    fs.writeFileSync(path.join(skillDir, 'SKILL.md'), buildCodexSkillContent(name, description, commandFilePath));
+    installedCount++;
+  }
+
+  if (installedCount > 0) {
+    console.log(`  ${green}✓${reset} Installed ${installedCount} Codex skills to .codex/skills`);
+  } else {
+    console.log(`  ${yellow}⚠${reset} No Codex skills were installed (missing frontmatter?)`);
+  }
+
+  if (!fs.existsSync(agentsTemplatePath)) {
+    console.error(`  ${yellow}✗${reset} Missing Codex AGENTS template at templates/codex/AGENTS.md`);
+    process.exit(1);
+  }
+
+  const agentsTemplate = fs.readFileSync(agentsTemplatePath, 'utf8');
+  if (writeCodexAgentsFile(repoRoot, agentsTemplate)) {
+    console.log(`  ${green}✓${reset} Updated AGENTS.md with GSD guidance`);
+  } else {
+    console.error(`  ${yellow}✗${reset} Failed to update AGENTS.md`);
+    process.exit(1);
+  }
+
+  return { runtime: 'codex' };
+}
+
+function uninstallCodexLocal() {
+  const repoRoot = process.cwd();
+  const skillsDir = path.join(repoRoot, '.codex', 'skills');
+
+  console.log(`  Uninstalling GSD from ${cyan}Codex${reset} in ${cyan}.${reset}\n`);
+
+  const removedSkills = removeCodexGsdSkillDirs(skillsDir);
+  if (removedSkills > 0) {
+    console.log(`  ${green}✓${reset} Removed ${removedSkills} GSD skills from .codex/skills`);
+  }
+
+  const agentsResult = removeCodexAgentsBlock(repoRoot);
+  if (agentsResult.removed && agentsResult.deleted) {
+    console.log(`  ${green}✓${reset} Removed AGENTS.md (GSD block was only content)`);
+  } else if (agentsResult.removed) {
+    console.log(`  ${green}✓${reset} Removed GSD guidance from AGENTS.md`);
+  }
+
+  if (removedSkills === 0 && !agentsResult.removed) {
+    console.log(`  ${yellow}⚠${reset} No Codex GSD files found to remove.`);
+  }
+
+  console.log(`\n  ${green}Done!${reset} GSD has been uninstalled from Codex.\n  Your other files and skills have been preserved.\n`);
 }
 
 /**
@@ -1144,15 +1409,21 @@ function promptRuntime(callback) {
 
   ${cyan}1${reset}) Claude Code ${dim}(~/.claude)${reset}
   ${cyan}2${reset}) OpenCode    ${dim}(~/.config/opencode)${reset} - open source, free models
-  ${cyan}3${reset}) Both
+  ${cyan}3${reset}) Codex       ${dim}(local only)${reset}
+  ${cyan}4${reset}) Claude Code + OpenCode
+  ${cyan}5${reset}) Claude Code + OpenCode + Codex ${dim}(local only)${reset}
 `);
 
   rl.question(`  Choice ${dim}[1]${reset}: `, (answer) => {
     answered = true;
     rl.close();
     const choice = answer.trim() || '1';
-    if (choice === '3') {
+    if (choice === '5') {
+      callback(['claude', 'opencode', 'codex']);
+    } else if (choice === '4') {
       callback(['claude', 'opencode']);
+    } else if (choice === '3') {
+      callback(['codex']);
     } else if (choice === '2') {
       callback(['opencode']);
     } else {
@@ -1166,11 +1437,23 @@ function promptRuntime(callback) {
  * @param {string[]} runtimes - Array of runtimes to install for
  */
 function promptLocation(runtimes) {
+  const requiresLocal = runtimes.includes('codex');
   // Check if stdin is a TTY - if not, fall back to global install
   // This handles npx execution in environments like WSL2 where stdin may not be properly connected
   if (!process.stdin.isTTY) {
-    console.log(`  ${yellow}Non-interactive terminal detected, defaulting to global install${reset}\n`);
-    installAllRuntimes(runtimes, true, false);
+    if (requiresLocal) {
+      console.log(`  ${yellow}Non-interactive terminal detected, Codex installs are local-only${reset}\n`);
+      installAllRuntimes(runtimes, false, false);
+    } else {
+      console.log(`  ${yellow}Non-interactive terminal detected, defaulting to global install${reset}\n`);
+      installAllRuntimes(runtimes, true, false);
+    }
+    return;
+  }
+
+  if (requiresLocal) {
+    console.log(`  ${yellow}Codex installs are local-only. Installing locally.${reset}\n`);
+    installAllRuntimes(runtimes, false, true);
     return;
   }
 
@@ -1225,12 +1508,18 @@ function installAllRuntimes(runtimes, isGlobal, isInteractive) {
   const results = [];
 
   for (const runtime of runtimes) {
-    const result = install(isGlobal, runtime);
-    results.push(result);
+    if (runtime === 'codex') {
+      const result = installCodexLocal();
+      results.push(result);
+    } else {
+      const result = install(isGlobal, runtime);
+      results.push(result);
+    }
   }
 
   // Handle statusline for Claude Code only (OpenCode uses themes)
   const claudeResult = results.find(r => r.runtime === 'claude');
+  const codexResult = results.find(r => r.runtime === 'codex');
 
   if (claudeResult) {
     handleStatusline(claudeResult.settings, isInteractive, (shouldInstallStatusline) => {
@@ -1241,11 +1530,18 @@ function installAllRuntimes(runtimes, isGlobal, isInteractive) {
       if (opencodeResult) {
         finishInstall(opencodeResult.settingsPath, opencodeResult.settings, opencodeResult.statuslineCommand, false, 'opencode');
       }
+      if (codexResult) {
+        console.log(`\n  ${green}Done!${reset} Codex repo install completed.`);
+      }
     });
   } else {
-    // Only OpenCode
-    const opencodeResult = results[0];
-    finishInstall(opencodeResult.settingsPath, opencodeResult.settings, opencodeResult.statuslineCommand, false, 'opencode');
+    const opencodeResult = results.find(r => r.runtime === 'opencode');
+    if (opencodeResult) {
+      finishInstall(opencodeResult.settingsPath, opencodeResult.settings, opencodeResult.statuslineCommand, false, 'opencode');
+    }
+    if (codexResult) {
+      console.log(`\n  ${green}Done!${reset} Codex repo install completed.`);
+    }
   }
 }
 
@@ -1253,11 +1549,18 @@ function installAllRuntimes(runtimes, isGlobal, isInteractive) {
 if (hasGlobal && hasLocal) {
   console.error(`  ${yellow}Cannot specify both --global and --local${reset}`);
   process.exit(1);
+} else if (hasCodex && (hasGlobal || explicitConfigDir)) {
+  console.error(`  ${yellow}Codex installs are local-only. Use --codex --local${reset}`);
+  process.exit(1);
 } else if (explicitConfigDir && hasLocal) {
   console.error(`  ${yellow}Cannot use --config-dir with --local${reset}`);
   process.exit(1);
 } else if (hasUninstall) {
   // Uninstall mode
+  if (selectedRuntimes.includes('codex') && !hasLocal) {
+    console.error(`  ${yellow}Codex uninstall is local-only. Use --codex --local --uninstall${reset}`);
+    process.exit(1);
+  }
   if (!hasGlobal && !hasLocal) {
     console.error(`  ${yellow}--uninstall requires --global or --local${reset}`);
     console.error(`  Example: npx get-shit-done-cc --claude --global --uninstall`);
@@ -1265,7 +1568,11 @@ if (hasGlobal && hasLocal) {
   }
   const runtimes = selectedRuntimes.length > 0 ? selectedRuntimes : ['claude'];
   for (const runtime of runtimes) {
-    uninstall(hasGlobal, runtime);
+    if (runtime === 'codex') {
+      uninstallCodexLocal();
+    } else {
+      uninstall(hasGlobal, runtime);
+    }
   }
 } else if (selectedRuntimes.length > 0) {
   // Non-interactive: runtime specified via flags
