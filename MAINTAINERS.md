@@ -114,6 +114,12 @@ Use the parity harness to compare Codex vs Claude/OpenCode artifacts.
 npm run test:parity
 ```
 
+Note: the default phase `98` used by the harness may not exist in the roadmap. Prefer an explicit roadmap phase via `--phase`.
+
+```bash
+npm run test:parity -- --phase 4
+```
+
 Optional flags:
 
 - `--baseline opencode` to compare against OpenCode instead of Claude Code
