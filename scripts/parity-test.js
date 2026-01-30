@@ -220,6 +220,15 @@ function listFilesRec(dirPath) {
   return results;
 }
 
+function findSummaryFiles(phaseDir) {
+  if (!phaseDir || !fs.existsSync(phaseDir)) {
+    return [];
+  }
+  return listFilesRec(phaseDir)
+    .filter(file => file.endsWith('-SUMMARY.md'))
+    .map(file => path.relative(phaseDir, file));
+}
+
 
 function normalizeContent(content) {
   return content.split('\n')
@@ -339,6 +348,17 @@ function createReport(reportPath, data) {
   lines.push('### Diff Summary');
   reportDiffSummary(lines, data.compareResult.diffs);
   lines.push('');
+  lines.push('## Summary Artifacts');
+  lines.push(`- Codex SUMMARY files: ${data.summaryArtifacts.codex.length ? data.summaryArtifacts.codex.join(', ') : 'None found'}`);
+  lines.push(`- Baseline SUMMARY files: ${data.summaryArtifacts.baseline.length ? data.summaryArtifacts.baseline.join(', ') : 'None found'}`);
+  lines.push('');
+  if (data.summaryFailures.length > 0) {
+    lines.push('### Summary Artifact Check');
+    for (const failure of data.summaryFailures) {
+      lines.push(`- ${failure}`);
+    }
+    lines.push('');
+  }
   lines.push(`## Result`);
   lines.push(data.passed ? 'PASS' : 'FAIL');
   lines.push('');
@@ -478,6 +498,16 @@ function main() {
   const codexPhaseDir = findPhaseDirs(codexWorkspace, phase)[0];
   const baselinePhaseDir = findPhaseDirs(baselineWorkspace, phase)[0];
 
+  const codexSummaryFiles = findSummaryFiles(codexPhaseDir);
+  const baselineSummaryFiles = findSummaryFiles(baselinePhaseDir);
+  const summaryFailures = [];
+  if (codexSummaryFiles.length === 0) {
+    summaryFailures.push('Missing SUMMARY artifacts in codex workspace. Rerun parity with a phase that produces execute-phase SUMMARY outputs.');
+  }
+  if (baselineSummaryFiles.length === 0) {
+    summaryFailures.push('Missing SUMMARY artifacts in baseline workspace. Rerun parity with a phase that produces execute-phase SUMMARY outputs.');
+  }
+
   let compareResult = {
     codexFiles: [],
     baselineFiles: [],
@@ -506,7 +536,8 @@ function main() {
     : path.join(rootDir, options.report);
 
   const timestamp = new Date().toISOString();
-  const passed = compareResult.missingInCodex.length === 0
+  const passed = summaryFailures.length === 0
+    && compareResult.missingInCodex.length === 0
     && compareResult.missingInBaseline.length === 0
     && compareResult.diffs.length === 0;
 
@@ -527,6 +558,11 @@ function main() {
     },
     codexPhaseDirs,
     baselinePhaseDirs,
+    summaryArtifacts: {
+      codex: codexSummaryFiles,
+      baseline: baselineSummaryFiles
+    },
+    summaryFailures,
     compareResult,
     passed
   });
